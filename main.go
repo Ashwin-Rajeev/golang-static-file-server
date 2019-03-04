@@ -8,33 +8,36 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 )
 
 func main() {
 	handler := http.FileServer(http.Dir("static"))
-	log.Println("Server started at port 3000...")
 
 	http.Handle("/static/", http.StripPrefix("/static/", handler))
 	http.HandleFunc("/", serveTemplates)
 
 	errs := make(chan error, 2)
+	interrupt := make(chan os.Signal)
 	server := &http.Server{Addr: ":3000"}
 
 	go func() {
+		log.Println("Server started at port 3000...")
 		errs <- server.ListenAndServe()
 	}()
-
+	
 	go func() {
-		c := make(chan os.Signal)
-		signal.Notify(c, os.Interrupt)
-		errs <- fmt.Errorf("%s", <-c)
+		signal.Notify(interrupt, os.Interrupt)
+		errs <- fmt.Errorf("%s", <-interrupt)
 	}()
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
-
-	<-errs
-	log.Println("\nGracefully shutting down...")
+	select {
+	case <-errs:
+		close(errs)
+		close(interrupt)
+		log.Println("\nGracefully shutting down...")
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // Parses templates and serve on respective routes.
